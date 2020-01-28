@@ -8,5 +8,6 @@ module SpotifyCli
   # Require the necessary classes/modules.
   require 'spotify_cli/setup'
   require 'spotify_cli/authentication'
+  require 'spotify_cli/token_accessor'
   require 'spotify_cli/initialization'
 end
