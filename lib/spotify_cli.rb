@@ -1,5 +1,6 @@
 require "spotify_cli/version"
 
+# Wrapper module for the gem's functionality.
 module SpotifyCli
   # Generic error class definition.
   class Error < StandardError; end
