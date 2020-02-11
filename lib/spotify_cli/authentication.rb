@@ -9,11 +9,47 @@ module SpotifyCli
     # Authenticate with Spotify if the keystore does
     # not contain an access token already.
     def self.authenticate_user_if_necessary!
-      return unless spotify_access_token.empty?
+      return unless spotify_access_token.nil?
 
       direct_user_to_authorization_url
       await_response_from_spotify_and_request_access_token
       ensure_that_a_token_was_stored_successfully
+    end
+
+    # Refresh the user's access token using the refresh token from
+    # the local keystore (if it exists), and update the keystore accordingly.
+    def self.refresh_the_access_token!
+      return if spotify_refresh_token.nil?
+
+      request_refreshed_access_token_and_store_results
+      ensure_that_a_token_was_stored_successfully
+    end
+
+    # Process a request to Spotify for refreshing a user's access token. It
+    # might be worth refactoring this convention of making requests with
+    # HTTParty, since it is becoming repetitive.
+    def self.request_refreshed_access_token_and_store_results
+     request_body = {
+        grant_type: 'refresh_token',
+        refresh_token: spotify_refresh_token,
+        client_id: ENV['SPOTIFY_CLI_CLIENT_ID'],
+        client_secret: ENV['SPOTIFY_CLI_CLIENT_SECRET']
+      }
+
+      request_headers = {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+
+      request_response = HTTParty.post(
+        'https://accounts.spotify.com/api/token',
+        body: request_body,
+        headers: request_headers
+      )
+
+      handle_the_resulting_tokens(
+        access_token: request_response['access_token'],
+        refresh_token: spotify_refresh_token
+      )
     end
 
     # Note that this will currently only work for MacOS, because linux requires
@@ -88,27 +124,34 @@ module SpotifyCli
         headers: request_headers
       )
 
-      handle_the_resulting_access_token(request_response['access_token'])
+      handle_the_resulting_tokens(
+        access_token: request_response['access_token'],
+        refresh_token: request_response['refresh_token']
+      )
     end
 
     # Store the given access token in the keystore, or
     # raise an error if no access token was provided.
-    def self.handle_the_resulting_access_token(token)
-      if token.nil? || token.empty?
-        raise 'Authentication failed! ' \
-              'No access token was provided.'
+    def self.handle_the_resulting_tokens(token_hash)
+      if token_hash[:access_token].nil? || token_hash[:refresh_token].nil?
+        raise 'Authentication failed! No token was provided.'
       else
-        `echo '#{token}' >> ~/.spotify_cli_keystore`
+        # Empty the contents of the keystore.
+        `> ~/.spotify_cli_keystore`
+
+        # Write the hash of tokens to the keystore.
+        `echo '#{token_hash}' >> ~/.spotify_cli_keystore`
       end
     end
 
     # Raise an error if, at the end of the authentication process, there
     # is still no access token in the local keystore.
     def self.ensure_that_a_token_was_stored_successfully
-      return unless spotify_access_token.empty?
+      return unless spotify_access_token.nil?
+      return unless spotify_refresh_token.nil?
 
       raise 'Authentication failed! ' \
-            'No access token could be found.'
+            'No token could be found.'
     end
 
     # Construct the authorization URL with the given client ID.
